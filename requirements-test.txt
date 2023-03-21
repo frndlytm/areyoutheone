@@ -1,0 +1,11 @@
+# Testing
+pytest
+
+# Linting
+bandit
+black
+flake8
+flake8-bugbear
+isort
+mypy
+

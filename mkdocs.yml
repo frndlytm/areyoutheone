@@ -1,0 +1,56 @@
+site_name: "frndlytm.github.io"
+copyright: "Copyright &copy; 2023 Christian J. DiMare-Baits"
+
+theme:
+  name: "material"
+  language: "en"
+
+  palette:
+    scheme: "slate"
+    primary: "deep purple"
+    accent: "cyan"
+
+  font:
+    text: "Montserrat"
+    code: "Red Hat Mono"
+
+  features:
+    - "navigation.footer"
+    - "navigation.tabs"
+    - "navigation.tabs.sticky"
+    - "navigation.top"
+    - "navigation.tracking"
+    - "search.highlight"
+    - "search.share"
+    - "search.suggest"
+    - "toc.follow"
+
+plugins:
+  - search:
+  - tags:
+
+markdown_extensions:
+  - attr_list:
+  - def_list:
+  - footnotes:
+  - md_in_html:
+  - tables:
+  - toc:
+      toc_depth: 3
+      permalink: true
+
+  - pymdownx.betterem:
+  - pymdownx.caret:
+  - pymdownx.mark:
+  - pymdownx.tilde:
+
+  - pymdownx.details:
+  - pymdownx.tabbed:
+      alternate_style: true
+
+  - pymdownx.superfences:
+      custom_fences:
+        - name: "mermaid"
+          class: "mermaid"
+          format: "!!python/name:pymdownx.superfences.fence_code_format"
+
