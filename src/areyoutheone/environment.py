@@ -40,7 +40,7 @@ from typing import *
 
 import numpy as np
 
-from areyoutheone.types import Match, Player
+from areyoutheone.types import Info, Match, Player
 
 
 @dataclass
@@ -49,6 +49,16 @@ class MatchUp:
     choosers: Sequence[Player]
     chosen: Sequence[Player]
     fluid: bool = False
+
+    def __post_init__(self):
+        if (n_choosers := len(self.choosers)) != (n_chosen := len(self.chosen)):
+            raise ValueError(
+                "Complete match-up has equal sequence lengths: "
+                f"(Choosers, Chosen) = ({n_choosers}, {n_chosen})."
+            )
+
+    def __len__(self):
+        return len(self.choosers)
 
     def __iter__(self):
         return zip(self.choosers, self.chosen)
@@ -123,12 +133,26 @@ class MatchUp:
 
 
 class AreYouTheOne:
-    def __init__(self, matching: set[Edge], fluid: bool = False):
+    def __init__(
+        self,
+        matching: set[Match],
+        guesses: int | None = None,
+        prize: float = 1_000_000,
+        fluid: bool = False,
+    ):
+        self.n_pairs = len(matching)
         self.matching = matching
         self.fluid = fluid
+        self.guesses = guesses or self.n_pairs
+        self.total_prize = prize
+        self.remaining_prize = prize
+        self.possible_matches = np.ones((self.n_pairs, self.n_pairs))
+
+    def truth(self, match: Match) -> bool:
+        return match in self.matching
 
     def beams(self, matchup: MatchUp) -> Sequence[bool]:
-        return np.array([(match in self.matching) for match in matchup])
+        return np.array([(match in self.matching) for match in matchup], dtype=int)
 
     def options(self, player: Player) -> set[Player]:
         # Season 8: Secually Fluid Season
@@ -140,11 +164,52 @@ class AreYouTheOne:
             return self.choosers if player in self.chosen else self.chosen
 
     def choices(self, player: Player, matchup: MatchUp) -> set[Player]:
-        return self.options(player) / set(  # Take the player's options
-            matchup.players
-        ) | matchup.match(  # Remove already  matched players
-            player
-        )  # Add back the player's current match
+        # fmt:off
+        return (
+            self.options(player)  # Take the player's options
+            / set(matchup.players) # Remove already  matched players
+            | matchup.match(player)  # Add back the player's current match
+        )
+        # fmt:on
 
-    def step(self, S: MatchUp) -> float:
-        ...
+    def is_blackout(self, matchup: MatchUp, info: Info = None) -> bool:
+        # TODO: Truth Booth
+        #     ISSUE: issues/1
+        #     AUTHOR: frndlytm
+        #     DESCRIPTION:
+        #         Enabling the Truth booth is going to require encoding the agent's
+        #         knowledge about perfect matches from the truth booth into the info.
+        #         A blackout means no new beams above the knowledge of perfect matches.
+        #
+        n_beams = self.beams(matchup).sum()
+        return bool(n_beams)
+
+    def is_perfect(self, matchup: MatchUp, _: Info = None) -> bool:
+        n_beams = self.beams(matchup).sum()
+        return n_beams == self.n_pairs
+
+    def step(self, A: MatchUp, info: Info = None) -> float:
+        info = info or {}
+        self.guesses -= 1
+
+        # By default, just gusessing doesn't win a prize, and the game ends when
+        # there are no more guesses or no more prize money remaining
+        reward, success, truncated = 0, False, not (self.guesses and self.remaining_prize)
+
+        # "Blackouts" result in a reduction to the prize money
+        if self.is_blackout(A, info):
+            self.remaining_prize -= 0.25 * self.total_prize
+
+        # A "Perfect Match" means the agent wins the game. The beams mean we
+        # reduce the possible matches to a permutation matrix, and 
+        elif self.is_perfect(A, info):
+            reward, success, truncated = self.remaining_prize, True, False
+
+            self.possible_matches = 0
+            for chooser, chosen in A:
+                self.possible_matches[(chooser, chosen)] = 1
+                self.possible_matches[(chosen, chooser)] = 1
+
+        # An observation looks like a boolean matrix containing the possible
+        # choices for each player in the game
+        return self.possible_matches, reward, success, truncated, info

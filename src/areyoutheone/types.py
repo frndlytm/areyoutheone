@@ -1,4 +1,3 @@
-from typing import *
-
 Player = int
-Match = Tuple[Player, Player]
+Match = tuple[Player, Player]
+Info = dict | None
