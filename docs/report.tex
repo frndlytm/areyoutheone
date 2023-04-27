@@ -1,0 +1,231 @@
+\documentclass{article}
+
+
+\usepackage{algorithm}
+\usepackage[noend]{algpseudocode}
+  \algrenewcommand\algorithmicthen{}
+
+\usepackage{amsmath}
+\usepackage{amsthm}
+  \newtheorem{definition}{Definition}[section]
+  \newtheorem{problem}{Problem}[section]
+
+\newcommand{\cross}{ \ensuremath{\times} }
+\newcommand{\intersect}{ \ensuremath{\cap} }
+\newcommand{\union}{ \ensuremath{\cup} }
+
+% Basically comment out the instructions.
+\newcommand{\comment}[1]{}
+
+
+\title{
+  \textit{Are You The One?} \\
+  Probabilistic Stable Matching
+}
+\author{
+    Christian J. DiMare-Baits \\
+    dimare.c@northeastern.edu \\
+    Khoury College of Computer Science, \\
+    Northeastern University
+}
+
+\begin{document}
+\maketitle
+
+\comment{
+Please submit your final project report as a single document
+in PDF format. You should not upload datasets or code; rather,
+you should host these files on Dropbox, GitHub, or some other
+external website. You should provide links to these external
+resources in your report.
+
+Your report should be at least five pages long and cover the
+following topics:
+
+\begin{itemize}
+  \item What is the problem you were trying to solve and what
+        were your results?
+  \item What data, if any, did you collect?
+  \item What algorithms or methods did you try?
+  \item What were the results of your implementation and/or
+        experiments and what conclusions do you draw from them?
+  \item What milestones in your grade contract did you
+        achieve?
+  \item For group projects, what did each team member
+        contribute?
+\end{itemize}
+
+Feel free to include examples, figures, or small snippets of
+code, if it helps your explanations. In general, however, as
+noted above, the full data and code should not be part of the
+report you submit but hosted externally.
+}
+
+\section{Introduction}\label{sec:introduction}
+
+\textit{Are You the One?} is a reality television dating show where
+a house of approximately 20 contestants are secretly paired up
+by a match-making algorithm. Over the course of approximately
+10 weeks, the contestants complete various physical and emotional
+challenges to win dates in search of their perfect match. Every
+week, the contestants form pairs. Additionally each week, the
+contestants vote on a couple to send into the "truth booth" which
+reveals the answer about the chosen pair. After all pairs are
+locked in, the contestants learn how many pairs they guessed
+correctly (but not which pairs are correct), and the contestants
+must get at least one pair correct every week or else they lose
+25\% of the final prize: \$1,000,000.
+
+Every season, there is a clear divide between "head versus heart"
+or "strategy versus emotion", and the show emphasizes a healthy
+mixture of the two approaches in order for the contestants to win.
+The following seeks to understand this game probabilistically and
+to make it playable by AI agents.
+
+\begin{itemize}
+  \item First, we translate the show's dynamics into a
+        playable environment.
+  \item Second, we analyze the probabilistic structure of
+        the game's action and observation spaces.
+  \item Third, we describe a learning agent that develops
+        a strategy for winning the game.
+  \item Last, we evaluate learning over randomly
+        generated games with respect to number of contestants
+        and number of guesses.
+\end{itemize}
+
+
+\section{Stable Marriage}
+
+The Stable Marriage Problem is a common constraint satisfaction problem
+in graph theory that seeks to find pairs of nodes that maximizes the
+preferences in a weighted bipartite graph. First, here are some
+definitions in graph theory.
+
+\begin{definition}[Weighted Bipartite Graph]
+  Let $G = (A, B, E, W)$ be a weighted bipartite graph with node
+  set $V = A \union B$, edges $E \in A \cross B$ which cross
+  between $A$ and $B$, and a matrix of weights $W$ indexed as
+  $W_{a,b}$ containing the weight of the edge between $(a, b) \in E$.
+
+  For consistency in notation, let $a, a^{\prime}, \ldots \in A$
+  and similarly $b, b^{\prime}, \ldots \in B$.
+\end{definition}
+
+\begin{definition}[Matching]
+  A matching in a bipartite graph $B$ is a subset of edges,
+  $M \subset E$, such that:
+
+  \begin{itemize}
+    \item all vertexes in one of $A$ or $B$ are covered by an edge in $M$, and
+    \item no node in $V$ belongs to more than one edge in $M$.
+  \end{itemize}
+
+  A perfect matching further restricts the matching so that it
+  covers all of $V$.
+\end{definition}
+
+Given a weighted bipartite graph, $G$, a stable marriage is an
+edge $(a, b) \in E$ such that $W_{a, b} \geq W_{a^\prime, b}$,
+$\forall a^\prime \in A$. The objective of the stable marriage
+problem is to find this preferential assignment. The most common
+algorithm for finding a stable marriage is the Gale-Shapely algorithm
+given below.
+
+\begin{algorithm}
+  \caption{Gale-Shapely Stable Marriage}\label{alg:gale-shapely}
+  \begin{algorithmic}[1]
+    \Procedure{Stable-Matching}{A, B, E, W}
+    \State Initialize an empty matching, $M$
+    \While{$\exists a \in A \And a \notin M$}
+    \State $b \gets E.Neighbors(a).SortBy(W).First()$
+    \If {$\exists (a^\prime, b) \in M$}
+    \If {$W[a, b] > W[a^\prime, b]$}
+    \State $M.Remove(a^\prime, b)$
+    \State $M.Add(a, b)$
+    \EndIf
+    \Else
+    \State $M.Add(a, b)$
+    \EndIf
+    \EndWhile
+    \Return $M$
+    \EndProcedure
+  \end{algorithmic}
+\end{algorithm}
+
+This algorithm iteratively builds up a matching by adding an edge
+to the matching at each step of the while loop, sometimes replacing
+an existing edge with a more preferred edge; however, note that the
+algorithm really only constrains on the preferences of the second vertex
+partition, $B$. Ultimately, this algorithm terminates when all $a \in A$
+have chosen a partner, and it is guaranteed to terminate because we are
+bounded by a finite set of edges to test. Additionally, this yields the
+best possible matching for the elements of $B$, and the worst possible
+matching for elements of $A$. In order to counteract this
+
+In the game of \textit{Are You The One>?} We assume that the cast of
+contestants were paired up according to this algorithm using some hidden
+weight matrix which we hope to approximate as the game progresses.
+
+
+\section{\textit{Are You The One?}}
+
+Given the appropriate foundations in graph theory, we can formally describe
+the game of \textit{Are You The One?} with the following dynamics:
+
+\begin{itemize}
+  \item The observation space, $S$, is the set of sequences of bipartite
+        graphs representing possible matches remaining to be explored, plus
+        the number of beams revealed by the previous action. The reason we
+        observe a sequence of graphs is to track changes as a result of choices.
+  \item The initial observation is the fully connected bipartite graph
+        of contestants in the game with 0 beams.
+  \item The action space, $A$, contains the set of possible matchings on
+        the bipartite graph, crossed with the edge set. This represents a
+        guessed match plus a guessed truth booth every week.
+  \item The terminal reward $R_h$ is a hidden variable tracking the remaining
+        cash prize. Let $@$ be the terminal success state and $R_{max}$ be the
+        maximum possible prize pool, then $R(@) = R_h$. A blackout occurs when
+        an action yields 0 correct pairs. Whenever a blackout, occurs the prize
+        is updated to $R_h = R_h - 0.25 * R_{max}$.
+  \item Normally, the game would end when $R_h = 0$; however, this results in
+        a sparse reward signal, so we allow the agent to receive negative rewards
+        and force it to learn to find perfect matches.
+  \item The game terminates when the agent has discovered the random initial
+        perfect matching.
+\end{itemize}
+
+\section{Milestones}
+
+For the first milestone, we needed to implement a playable game for the
+agent to play. This has been accomplished with the implementation of the
+AreYouTheOne environmemt deacribed above.
+
+For the second milestone, we needed to construct a brute force search agent
+to collect experiences for the agent so I can measure the effect of the
+hyper-parameters of the game against the rewards for playing. For example,
+how does the number of matches affect the constraint satisfaction problem?
+How about the number of weeks?
+
+For the third milestone, we needed to implement a probabilistic approach to
+solving the game that incorporates match-up ceremonies probabilistically.
+The best way we found to approach this was relying on a Naive Bayes approach
+that evaluates stable matchings on the basis on the combined likelihoods
+that pairs belong or do not belong in the target matching based on the
+"beam" dynamics in the game. By maintaining incremental likelihood matrices
+for the match versus no match assumptions, we encorporate observations at
+each guessing step and seek a stable matching that incorporates them.
+
+Lastly, we were unable to measure the agent against number of guesses
+and prize money to over the course of training on randomly generated
+experiences.
+
+Ultimately, we were only able to design and implement the environment
+due to unforeseen problems interacting with graph-based state and action
+spaces.
+
+The current state of the project is posted to:
+
+https://github.com/frndlytm/areyoutheone
+
+\end{document}

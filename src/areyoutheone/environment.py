@@ -3,10 +3,10 @@
 
 areyoutheone is a match-up dating game.
 
-The players, $G = (A \Intersect A\prime, E)$, are split into two
-even teams of size $m = |A| = |A\prime|$ seeking their in a
-perfect matching $E$. They have $w$ weeks to find the perfect
-match $E$ to win up to four units of reward money, $R$.
+The players, $G = (A \Union B, E)$, are split into two
+even teams of size $m = |A| = |B|$ seeking their partner in a
+pre-determined perfect matching $E$. They have $w$ weeks to find
+the perfect match $E$ to win up to four units of reward money, $R$.
 
 Every iteration,
 
@@ -39,15 +39,17 @@ from dataclasses import dataclass
 from typing import *
 
 import numpy as np
+import gymnasium as gym
 
-from areyoutheone.types import Info, Match, Player
+from areyoutheone import types
 
 
 @dataclass
 class MatchUp:
     game: "AreYouTheOne"
-    choosers: Sequence[Player]
-    chosen: Sequence[Player]
+    U: Sequence[types.Player]
+    V: Sequence[types.Player]
+    bipartite: int
     fluid: bool = False
 
     def __post_init__(self):
@@ -68,7 +70,7 @@ class MatchUp:
         raise ValueError(f"{x} is not a Player or a Match.")
         
     @__contains__.register
-    def __contains_player__(self, player: Player):
+    def __contains_player__(self, player: types.Player) -> bool:
         for chooser in self.choosers:
             if player == chooser:
                 return True
@@ -80,33 +82,32 @@ class MatchUp:
         return False
 
     @__contains__.register
-    def __contains_match__(self, match: Match):
+    def __contains_match__(self, match: Match) -> bool:
         # Do a linear scan for the match or its swap in the match-up
         for chooser, chosen in self:
             if match == (chooser, chosen) or match == (chosen, chooser):
                 return True
-
         return False
 
-    def __getitem__(self, player: Player) -> Player:
+    def __getitem__(self, player: types.Player) -> types.Player:
         return self.get_match(player)
 
     @property
-    def players(self) -> set[Player]:
+    def players(self) -> set[types.Player]:
         return set(self.choosers) | set(self.chosen)
 
-    def add(self, chooser: Player, chosen: Player):
+    def add(self, u: types.Player, v: types.Player):
         # Cannot add a match to the match-up if it comtains a
         # player who already has a match
-        if self.match(chooser) is not None:
+        if self.match(u) is not None:
             raise ValueError(...)
-        if self.match(chosen) is not None:
+        if self.match(v) is not None:
             raise ValueError(...)
 
-        self.choosers.append(chooser)
-        self.chosen.append(chosen)
+        self.U.append(u)
+        self.V.append(v)
 
-    def match(self, player: Player) -> Player:
+    def match(self, player: types.Player) -> types.Player:
         for chooser, chosen in self:
             if player == chooser:
                 return chosen
@@ -132,7 +133,7 @@ class MatchUp:
         return list(zip(*self.nodes()))
 
 
-class AreYouTheOne:
+class AreYouTheOne(gym.Env):
     def __init__(
         self,
         matching: set[Match],
@@ -148,13 +149,17 @@ class AreYouTheOne:
         self.remaining_prize = prize
         self.possible_matches = np.ones((self.n_pairs, self.n_pairs))
 
+    @property
+    def shape(self) -> types.Shape:
+        return self.possible_matches.shape
+
     def truth(self, match: Match) -> bool:
         return match in self.matching
 
     def beams(self, matchup: MatchUp) -> Sequence[bool]:
         return np.array([(match in self.matching) for match in matchup], dtype=int)
 
-    def options(self, player: Player) -> set[Player]:
+    def options(self, player: types.Player) -> set[types.Player]:
         # Season 8: Secually Fluid Season
         # Basically, you can't match wkth yourself, but every other
         # player is fair game.
@@ -163,7 +168,7 @@ class AreYouTheOne:
         else:
             return self.choosers if player in self.chosen else self.chosen
 
-    def choices(self, player: Player, matchup: MatchUp) -> set[Player]:
+    def choices(self, player: types.Player, matchup: MatchUp) -> set[types.Player]:
         # fmt:off
         return (
             self.options(player)  # Take the player's options
@@ -172,7 +177,7 @@ class AreYouTheOne:
         )
         # fmt:on
 
-    def is_blackout(self, matchup: MatchUp, info: Info = None) -> bool:
+    def is_blackout(self, matchup: MatchUp, info: types.Info = None) -> bool:
         # TODO: Truth Booth
         #     ISSUE: issues/1
         #     AUTHOR: frndlytm
@@ -184,11 +189,11 @@ class AreYouTheOne:
         n_beams = self.beams(matchup).sum()
         return bool(n_beams)
 
-    def is_perfect(self, matchup: MatchUp, _: Info = None) -> bool:
+    def is_perfect(self, matchup: MatchUp, _: types.Info = None) -> bool:
         n_beams = self.beams(matchup).sum()
         return n_beams == self.n_pairs
 
-    def step(self, A: MatchUp, info: Info = None) -> float:
+    def step(self, A: MatchUp, info: types.Info = None) -> types.Step:
         info = info or {}
         self.guesses -= 1
 
@@ -205,7 +210,7 @@ class AreYouTheOne:
         elif self.is_perfect(A, info):
             reward, success, truncated = self.remaining_prize, True, False
 
-            self.possible_matches = 0
+            self.possible_matches = np.zeros_like(self.possible_matches)
             for chooser, chosen in A:
                 self.possible_matches[(chooser, chosen)] = 1
                 self.possible_matches[(chosen, chooser)] = 1
